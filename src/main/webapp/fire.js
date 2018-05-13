@@ -275,41 +275,94 @@ const buildDisplay = () => appendChildren($("#fire")[0],
     buildButton("stop", "Stop", stop)
 )
 
-// intDiv:: (x, y) -> Number
+/** Integer devide one number by another
+ * 
+ * intDiv:: (x, y) -> Number
+ * 
+ * @param {Number} x - Denominator
+ * @param {Number} y - Numerator
+ * @return {Number} - integer value of x/y
+ */
 const intDiv = (x, y) => Math.floor(x / y);
 
-// clamp:: (Number, Number, Number) -> Number
+/** Clamp a number to a range. min must be less than max.
+ * 
+ * clamp:: (Number, Number, Number) -> Number
+ * 
+ * @param {Number} min - Lower bound for the range
+ * @param {Number} max - Upper bound for the range
+ * @param {Number} x - Value to check
+ */
 const clamp = (min, max, x) => (x < min) ? min : (x > max) ? max : x;
 
-// clampWidth:: Number -> Number
+/** {@link clamp} an number to the width of the grid
+ * 
+ *  clampWidth:: Number -> Number
+ */
 const clampWidth = x => clamp(0, cols() - 1, x);
 
-// clampHeight:: Number -> Number
+/** {@link clamp} an number to the height of the grid
+ * 
+ *  clampHeight:: Number -> Number
+ */
 const clampHeight = y => clamp(0, rows() - 1, y);
 
+/** Holds a pair of numbers and tools to map from
+ * a 1D array to/from a 2D grid.
+ * @class
+ */
 class Pair {
     constructor(x, y) {
         this.x = x;
         this.y = y;
     }
 
+    /** Converts this Pair to an index 
+     * 
+     * index:: () -> Number
+     * @return {Number}
+     */
     get index() {
         return (cols() * this.y) + this.x;
     }
 
+    /** Gets a Pair pointing to the cell at (offX, offY) 
+     * relative to this one. Out of bounds access is clamped
+     * to the edge of the grid
+     * 
+     * neigbour:: (Number, Number) -> Pair
+     * 
+     * @param {Number} offX - Offset in x
+     * @param {Number} offY - Offset in y
+     * @return {Pair}
+     */
     neighbour(offX, offY) {
         return new Pair(clampWidth(this.x + offX), clampHeight(this.y + offY));
     }
 
+    /** Creates a new pair based on the given index. No overflow checking is done
+     * 
+     * fromIndex:: Number -> Pair
+     * 
+     */
     static fromIndex(index) {
         return new Pair(index % cols(), intDiv(index, cols()));
     }
 }
 
-// neighbour:: (Number, Number, Number) => Number
+/** Gets the gridwise neighbor of a point in a 1D array
+ * 
+ * neighbour:: (Number, Number, Number) => Number
+ */
 const neighbour = (index, x, y) => Pair.fromIndex(index).neighbour(x, y).index;
 
-// neighborhoood: Number => [Number]
+
+/** Gets a list of indexes of neigbours
+ * 
+ * @todo Get this to take a list of (x,y) pairs
+ * 
+ * neighborhoood: Number => [Number]
+ */
 const neighbourhood = index => [
     neighbour(index, -1, 1),
     neighbour(index, 0, 1),
@@ -322,30 +375,115 @@ const neighbourhood = index => [
     neighbour(index, 0, 3)
 ];
 
+/** Calculates if a given 1D index is in a 2D row
+ * 
+ * filterLine:: (Number, Number) -> Boolean
+ * 
+ * @param {Number} row 
+ * @param {Number} index 
+ * @return {Boolean} - true if the index is in the row, false otherwise
+ */
 const filterLine = (row, index) => Pair.fromIndex(index).y === row;
+
+/** Calculates if a given 1D index is in the final row of the grid
+ * 
+ * filterLast:: (Number) -> Boolean
+ * 
+ * @param {Number} index 
+ * @return {Boolean} - true if the index is in the last row, false otherwise
+ */
 const filterLast = index => filterLine(rows() - 1, index);
 
-// mutate:: (Number, Number, [Number]) => Number
+/** If the value given isn't in the last row, calcualte the average value of its neighbourghs
+ * 
+ * mutate:: (Number, Number, [Number]) => Number 
+ * 
+ * @param {Number} x - Current value
+ * @param {Number} index 
+ * @param {Number[]} xs - Current array
+ * @return {Number} - x for the last row, or averaged neighbours
+ */
 const mutate = (x, index, xs) =>
     filterLast(index) ? x :
     neighbourhood(index)
     .map(n => xs[n])
     .reduce((acc, v) => acc + v, 0) / fireFactor()
 
-// createArray:: (Number, () -> a) -> [a]
+/** Create an array of length x, and call fn for each element
+ * 
+ * createArray:: (Number, () -> a) -> [a]
+ * 
+ * @param {Number} x - Length of new array
+ * @param {Function} fn - Mutator called for each new element
+ * @return {*[]} - Newly created and initilized array
+ */
 const createArray = (x, fn) => Array(x).fill().map(fn);
 
+/**  Calls fn for each value in the last row of the grid
+ * 
+ * setLast:: (() -> Number, Number, Number) -> Number
+ * 
+ * @param {Function} fn 
+ * @param {Number} x 
+ * @param {Number} index 
+ */
 const setLast = (fn, x, index) => filterLast(index) ? fn() : x;
 
+
+/** Sets each value of the last row of the grid to a random number
+ * 
+ * randomLast:: (Number, Number) -> Number
+ */
 const randomLast = (x, index) => setLast(Math.random, x, index);
+
+
+/** Sets each value of the last row of the grid to 1 
+ * 
+ * randomLast:: (Number, Number) -> Number
+ */
 const fixedLast = (x, index) => setLast(() => 1, x, index);
 
 // initArray:: Number -> [a]
+
+/** Creates a new array of length x, filled with zeros
+ * 
+ * initArray:: (x) -> [0]
+ * 
+ * @param {Number} x - Length of the new array
+ */
 const initArray = x => createArray(x, () => 0);
 
+/** Gets the Graphic Context from the DOM canvas */
 const getContext = () => $("canvas")[0].getContext("2d");
+
+/** Sets the current drawing style for the given canvas
+ * 
+ * setStyle:: (Canvas, String) -> ()
+ * 
+ * @param {Canvas}
+ * @param {String}
+ */
 const setStyle = (c, s) => c.fillStyle = s;
+
+/** Draw a rectangle in the canvas in the current style
+ * 
+ * drawRect:: (Canvas, Number, Number, Number, Number) -> ()
+ * @param {Canvas}
+ * @param {Number} x - Left
+ * @param {Number} y - Top
+ * @param {Number} width
+ * @param {Number} height
+ */
 const drawRect = (c, x, y, w, h) => c.fillRect(x, y, w, h);
+
+/** Build a CSS hsl() funciton
+ * 
+ * makeColor:: (Number, Number, Number) -> String
+ * 
+ * @param {Number} h - Hue from 0 to 360
+ * @param {Number} s - Saturation from 0 to 100
+ * @param {Number} l - Lightness from 0 to 100;
+ */
 const makeColor = (h, s, l) => "hsl(" + h + ", " + s + "%, " + l + "%)";
 
 let fire = initArray(rows() * cols()).map(randomLast);
