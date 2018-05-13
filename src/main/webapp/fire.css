@@ -1,10 +1,9 @@
-       #fire {
-            display: flex;
-            flex-flow: column nowrap;
-            align-items: flex-start
-        }
+#fire {
+    display: flex;
+    flex-flow: column nowrap;
+    align-items: flex-start
+}
 
-        canvas {
-            border: thin solid black;
-        }
-
+canvas {
+    border: thin solid black;
+}

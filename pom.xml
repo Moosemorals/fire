@@ -8,7 +8,6 @@
   <version>1.0-SNAPSHOT</version>
   <packaging>war</packaging>
   <name>fire-toy Maven Webapp</name>
-  <!-- FIXME change it to the project's website -->
   <url>https://moosemorals.com/fire</url>
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -26,7 +25,7 @@
   <profiles>
 
   <profile>
-    <id>geb</id>
+    <id>remote</id>
     
     <build>
       <plugins>
@@ -44,7 +43,7 @@
           </executions>
           <configuration>
             <url>https://moosemorals.com/manager</url>
-            <server>geb</server>
+            <server>moosemorals</server>
             <path>${deployPath}</path>
           </configuration>
           <dependencies>
