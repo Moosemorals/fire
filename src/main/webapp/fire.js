@@ -41,7 +41,7 @@ const setState = (k, v) => state[k] = v;
  */
 const start = () => {
     setState("animating", true);
-    animate()
+    makeAnimator()();
 };
 /** Stop the animation
  * 
@@ -307,48 +307,15 @@ const clampWidth = x => clamp(0, cols - 1, x);
  */
 const clampHeight = y => clamp(0, rows - 1, y);
 
-/** Holds a pair of numbers and tools to map from
- * a 1D array to/from a 2D grid.
- * @class
+/** Calcuates x,y from index. 
+ * 
+ * fromIndex:: Number -> Object 
+ * 
  */
-class Pair {
-    constructor(x, y) {
-        this.x = x;
-        this.y = y;
-    }
-
-    /** Converts this Pair to an index 
-     * 
-     * index:: () -> Number
-     * @return {Number}
-     */
-    get index() {
-        return (cols * this.y) + this.x;
-    }
-
-    /** Gets a Pair pointing to the cell at (offX, offY) 
-     * relative to this one. Out of bounds access is clamped
-     * to the edge of the grid
-     * 
-     * neigbour:: (Number, Number) -> Pair
-     * 
-     * @param {Number} offX - Offset in x
-     * @param {Number} offY - Offset in y
-     * @return {Pair}
-     */
-    neighbour(offX, offY) {
-        return new Pair(clampWidth(this.x + offX), clampHeight(this.y + offY));
-    }
-
-    /** Creates a new pair based on the given index. No overflow checking is done
-     * 
-     * fromIndex:: Number -> Pair
-     * 
-     */
-    static fromIndex(index) {
-        return new Pair(index % cols, intDiv(index, cols));
-    }
-}
+const fromIndex = (index) => ({
+    x: index % cols,
+    y: intDiv(index, cols)
+});
 
 /** Gets the gridwise neighbor of a point in a 1D array
  * 
@@ -383,7 +350,7 @@ const neighbourhood = index => [
  * @param {Number} index 
  * @return {Boolean} - true if the index is in the row, false otherwise
  */
-const filterLine = (row, index) => Pair.fromIndex(index).y === row;
+const filterLine = (row, index) => fromIndex(index).y === row;
 
 /** Calculates if a given 1D index is in the final row of the grid
  * 
@@ -450,9 +417,8 @@ const randomLast = (x, index) => setLast(Math.random, x, index);
  */
 const fixedLast = (x, index) => setLast(() => 1, x, index);
 
-const everyOtherLast = (x, index) => setLast(() => (index + off) % 8 > 4 ? x : 0, x, index);
+const everyOtherLast = (x, index) => setLast(() => index % 8 > 4 ? x : 0, x, index);
 
-// initArray:: Number -> [a]
 
 /** Creates a new array of length x, filled with zeros
  * 
@@ -495,49 +461,71 @@ const drawRect = (c, x, y, w, h) => c.fillRect(x, y, w, h);
  */
 const makeColor = (h, s, l) => "hsl(" + h + ", " + s + "%, " + l + "%)";
 
-let fire = initArray(rows * cols).map(randomLast);
+/** Calculate which colors go at which coridinates
+ * 
+ * makeReds:: (Object) -> (Number, Number) -> ()
+ * 
+ * @param {Object of Array} r 
+ */
+const makeReds = r => (x, index) => r[Math.floor(x * 255)].push(fromIndex(index))
 
-let reds = createArray(256, () => []);
-const g = getContext();
+/** Convert a 0..1 number to a redish hsv 
+ * 
+ * makeRed:: Number -> String
+ * 
+ * @param {Number} x 
+ */
+const makeRed = x => makeColor(x * 70, getState("sat"), x * getState("lum"))
 
-let counter = 0;
-function animate() {
-    if (getState("animating")) {
-        window.requestAnimationFrame(animate);
+/** Draw a pixel on the canvas
+ * 
+ * drawPixel:: (Canvas, Number) -> Object -> ()
+ * 
+ * @param {Canvas} g - Canvas to drawn on
+ * @param {Number} scale - scale factor
+ */
+const drawPixel = (g, scale) => p => drawRect(g, p.x * scale, p.y * scale, scale, scale);
+
+/** Draws the fire on the canvas
+ *
+ * drawFire:: (Canvas, Number) -> (Object, Number) -> ()
+ * @param {Canvas} g 
+ * @param {Number} scale 
+ */
+const drawFire = (g, scale) => (p, red) => {
+    if (red > 0 && p.length > 0) {
+        setStyle(g, makeRed(red / 255));
+        p.forEach(drawPixel(g, scale));
     }
-
-    reds.forEach(x => x.length = 0);
-    const f2 = fire.map(mutate);
-
-    f2.forEach((x, index) => {
-        if (filterLast(index)) {
-            return;
-        }
-        const p = Pair.fromIndex(index);
-        const red = Math.floor(x * 255);
-
-        try {
-            reds[red].push(p);
-        } catch (ex) {
-            console.log(red, p);
-            throw ex;
-        }
-    })
-
-    const scale = getState("scale");
-    reds.forEach((x, red) => {
-        if (x.length > 0) {
-            setStyle(g, makeColor(
-                (red / 255) * 70,
-                getState("sat"),
-                red / 255 * getState("lum"),
-            ));
-            x.forEach(p => drawRect(g, p.x * scale, p.y * scale, scale, scale));
-        }
-    })
-
-    fire = f2.map(randomLast).map(everyOtherLast(counter % 8));
 }
 
+function makeAnimator() {
+    const g = getContext();
+    let fire = initArray(rows * cols).map(randomLast);
+    const reds = createArray(256, () => []);
 
-document.addEventListener("DOMContentLoaded", buildDisplay);
+    return function animate() {
+        if (getState("animating")) {
+            window.requestAnimationFrame(animate);
+        }
+        // Calculate the next frame
+        fire = fire
+            .map(mutate)
+            .map(randomLast)
+            .map(everyOtherLast);
+
+        // Calcuate which pixels are which color
+        reds.forEach(x => x.length = 0);
+        fire.map(makeReds(reds))
+
+        // Clear the display
+        setStyle(g, makeColor(0, 0, 0));
+        drawRect(g, 0, 0, 400, 400); 
+        
+        // Color the pixles back in again
+        reds.forEach(drawFire(g, getState("scale")))
+
+    }
+}
+
+on("DOMContentLoaded", document, buildDisplay);
