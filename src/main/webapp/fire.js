@@ -7,7 +7,7 @@ const ranges = {
 const state = {
     animating: false,
     scale: 4,
-    ff: 0.65,
+    ff: 0.25,
     sat: 100,
     lum: 100
 };
@@ -48,9 +48,9 @@ const start = () => {
  */
 const stop = () => setState("animating", false);
 
-const fireFactor = () => 9 + getState("ff");
-const rows = () => 200 / getState("scale");
-const cols = () => 200 / getState("scale");
+const fireFactor = 9 + getState("ff");
+const rows = Math.floor(400 / getState("scale"));
+const cols = Math.floor(400 / getState("scale"));
 
 /** Convert something 'array like' to an actual array
  * 
@@ -299,13 +299,13 @@ const clamp = (min, max, x) => (x < min) ? min : (x > max) ? max : x;
  * 
  *  clampWidth:: Number -> Number
  */
-const clampWidth = x => clamp(0, cols() - 1, x);
+const clampWidth = x => clamp(0, cols - 1, x);
 
 /** {@link clamp} an number to the height of the grid
  * 
  *  clampHeight:: Number -> Number
  */
-const clampHeight = y => clamp(0, rows() - 1, y);
+const clampHeight = y => clamp(0, rows - 1, y);
 
 /** Holds a pair of numbers and tools to map from
  * a 1D array to/from a 2D grid.
@@ -323,7 +323,7 @@ class Pair {
      * @return {Number}
      */
     get index() {
-        return (cols() * this.y) + this.x;
+        return (cols * this.y) + this.x;
     }
 
     /** Gets a Pair pointing to the cell at (offX, offY) 
@@ -346,7 +346,7 @@ class Pair {
      * 
      */
     static fromIndex(index) {
-        return new Pair(index % cols(), intDiv(index, cols()));
+        return new Pair(index % cols, intDiv(index, cols));
     }
 }
 
@@ -354,7 +354,7 @@ class Pair {
  * 
  * neighbour:: (Number, Number, Number) => Number
  */
-const neighbour = (index, x, y) => Pair.fromIndex(index).neighbour(x, y).index;
+const neighbour = (index, offX, offY) => (cols * clampHeight(intDiv(index, cols) + offY)) + clampWidth(index % cols + offX);
 
 
 /** Gets a list of indexes of neigbours
@@ -392,7 +392,7 @@ const filterLine = (row, index) => Pair.fromIndex(index).y === row;
  * @param {Number} index 
  * @return {Boolean} - true if the index is in the last row, false otherwise
  */
-const filterLast = index => filterLine(rows() - 1, index);
+const filterLast = index => filterLine(rows - 1, index);
 
 /** If the value given isn't in the last row, calcualte the average value of its neighbourghs
  * 
@@ -403,11 +403,19 @@ const filterLast = index => filterLine(rows() - 1, index);
  * @param {Number[]} xs - Current array
  * @return {Number} - x for the last row, or averaged neighbours
  */
-const mutate = (x, index, xs) =>
-    filterLast(index) ? x :
-    neighbourhood(index)
-    .map(n => xs[n])
-    .reduce((acc, v) => acc + v, 0) / fireFactor()
+const mutate = (x, index, xs) => {
+    if (filterLast(index)) {
+        return x;
+    } else {
+        const vals = neighbourhood(index).map(n => xs[n])
+        let total = 0;
+        for (let i = 0; i < vals.length; i += 1) {
+            total += vals[i];
+        }
+        return total / fireFactor;
+    }
+}
+
 
 /** Create an array of length x, and call fn for each element
  * 
@@ -436,12 +444,13 @@ const setLast = (fn, x, index) => filterLast(index) ? fn() : x;
  */
 const randomLast = (x, index) => setLast(Math.random, x, index);
 
-
 /** Sets each value of the last row of the grid to 1 
  * 
  * randomLast:: (Number, Number) -> Number
  */
 const fixedLast = (x, index) => setLast(() => 1, x, index);
+
+const everyOtherLast = (x, index) => setLast(() => (index + off) % 8 > 4 ? x : 0, x, index);
 
 // initArray:: Number -> [a]
 
@@ -486,12 +495,17 @@ const drawRect = (c, x, y, w, h) => c.fillRect(x, y, w, h);
  */
 const makeColor = (h, s, l) => "hsl(" + h + ", " + s + "%, " + l + "%)";
 
-let fire = initArray(rows() * cols()).map(randomLast);
+let fire = initArray(rows * cols).map(randomLast);
 
 let reds = createArray(256, () => []);
 const g = getContext();
 
+let counter = 0;
 function animate() {
+    if (getState("animating")) {
+        window.requestAnimationFrame(animate);
+    }
+
     reds.forEach(x => x.length = 0);
     const f2 = fire.map(mutate);
 
@@ -522,10 +536,7 @@ function animate() {
         }
     })
 
-    fire = f2.map(randomLast);
-    if (getState("animating")) {
-        window.requestAnimationFrame(animate);
-    }
+    fire = f2.map(randomLast).map(everyOtherLast(counter % 8));
 }
 
 
