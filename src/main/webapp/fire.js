@@ -12,6 +12,8 @@ const state = {
     lum: 100
 };
 
+const animators = {}
+
 /** Get a value from an object without thowing a NPE
  * prop:: (Object, String) -> a
  * 
@@ -40,8 +42,11 @@ const setState = (k, v) => state[k] = v;
 /** Start the animation
  */
 const start = () => {
-    setState("animating", true);
-    makeAnimator()();
+    stop();
+    requestAnimationFrame(() => {
+        setState("animating", true);
+        animators[getChecked('which')]()()
+    })
 };
 /** Stop the animation
  * 
@@ -263,14 +268,40 @@ const buildRangeControl = (tracks, name) => {
     )
 };
 
+const buildRadio = (name, props) => buildElement("input", {
+    type: "radio",
+    name: name,
+    value: props.value,
+    checked: props.checked
+})
+
+const buildRadioControl = (name, props) => appendChildren(
+    buildElement("label"),
+    buildRadio(name, props),
+    props.label
+)
+
+const buildRadioGroup = (name, onclick, props) => appendChildren(
+    ...props.map(v => 
+        onClick(buildRadioControl(name, v), onclick)
+    )
+);
+
+const getChecked = name => $("input[name='" + name + "']").filter(x => prop(x, 'checked'))[0].value;
+
 /** Create the controls needed for the display, and add them to the DOM
  * buildDisplay:: () -> Element
  * 
  */
-const buildDisplay = () => appendChildren($("#fire")[0],
-    buildRangeControl("ff", "Fire Factor"),
-    buildRangeControl("sat", "Saturation"),
-    buildRangeControl("lum", "Luminosity"),
+const buildDisplay = () => appendChildren($("#fire")[0], 
+    buildRadioGroup("which", start, [{
+        label: "One color",
+        value: 'oneColor',
+        checked: true
+    }, {
+        label: "Two colors",
+        value: 'twoColor'
+    }]),
     buildButton("start", "Start", start),
     buildButton("stop", "Stop", stop)
 )
@@ -417,7 +448,8 @@ const randomLast = (x, index) => setLast(Math.random, x, index);
  */
 const fixedLast = (x, index) => setLast(() => 1, x, index);
 
-const everyOtherLast = (x, index) => setLast(() => index % 8 > 4 ? x : 0, x, index);
+const everyOddLast = (x, index) => setLast(() => index % 16 > 8 ? x : 0, x, index);
+const everyEvenLast = (x, index) => setLast(() => index % 16 < 8 ? x : 0, x, index);
 
 
 /** Creates a new array of length x, filled with zeros
@@ -459,7 +491,7 @@ const drawRect = (c, x, y, w, h) => c.fillRect(x, y, w, h);
  * @param {Number} s - Saturation from 0 to 100
  * @param {Number} l - Lightness from 0 to 100;
  */
-const makeColor = (h, s, l) => "hsl(" + h + ", " + s + "%, " + l + "%)";
+const makeHsl = (h, s, l) => "hsla(" + h + ", " + s + "%, " + l + "%, 0.5)";
 
 /** Calculate which colors go at which coridinates
  * 
@@ -468,6 +500,7 @@ const makeColor = (h, s, l) => "hsl(" + h + ", " + s + "%, " + l + "%)";
  * @param {Object of Array} r 
  */
 const makeReds = r => (x, index) => r[Math.floor(x * 255)].push(fromIndex(index))
+const makeBlues = r => (x, index) => r[Math.floor(x * 255)].push(fromIndex(index))
 
 /** Convert a 0..1 number to a redish hsv 
  * 
@@ -475,7 +508,12 @@ const makeReds = r => (x, index) => r[Math.floor(x * 255)].push(fromIndex(index)
  * 
  * @param {Number} x 
  */
-const makeRed = x => makeColor(x * 70, getState("sat"), x * getState("lum"))
+const makeRed = x => makeHsl(x * 70, getState("sat"), x * getState("lum"))
+const makeBlue = x => makeHsl(240 - (x * 60), getState("sat"), x * getState("lum"))
+
+const makeRGB = (r, g, b) => "rgb(" + r + "," + g + "," + b + ")";
+const mergeColors = (r, b) => (_, index) => makeRGB(r[index], b[index], 0);
+
 
 /** Draw a pixel on the canvas
  * 
@@ -492,16 +530,16 @@ const drawPixel = (g, scale) => p => drawRect(g, p.x * scale, p.y * scale, scale
  * @param {Canvas} g 
  * @param {Number} scale 
  */
-const drawFire = (g, scale) => (p, red) => {
-    if (red > 0 && p.length > 0) {
-        setStyle(g, makeRed(red / 255));
+const drawFire = (g, scale, maker) => (p, index) => {
+    if (index > 0 && p.length > 0) {
+        setStyle(g, maker(index / 255));
         p.forEach(drawPixel(g, scale));
     }
 }
 
-function makeAnimator() {
+animators['oneColor'] = () => {
     const g = getContext();
-    let fire = initArray(rows * cols).map(randomLast);
+    let redFire = initArray(rows * cols).map(randomLast);
     const reds = createArray(256, () => []);
 
     return function animate() {
@@ -509,22 +547,52 @@ function makeAnimator() {
             window.requestAnimationFrame(animate);
         }
         // Calculate the next frame
-        fire = fire
+        redFire = redFire
             .map(mutate)
             .map(randomLast)
-            .map(everyOtherLast);
+            .map(everyOddLast);
 
         // Calcuate which pixels are which color
         reds.forEach(x => x.length = 0);
-        fire.map(makeReds(reds))
+        redFire.map(makeReds(reds))
 
         // Clear the display
-        setStyle(g, makeColor(0, 0, 0));
-        drawRect(g, 0, 0, 400, 400); 
-        
-        // Color the pixles back in again
-        reds.forEach(drawFire(g, getState("scale")))
+        setStyle(g, makeHsl(0, 0, 0));
+        drawRect(g, 0, 0, 400, 400);
 
+        // Color the pixles back in again
+        reds.forEach(drawFire(g, getState("scale"), makeRed))
+    }
+}
+
+animators['twoColor'] = () => {
+
+    const g = getContext();
+    let redFire = initArray(rows * cols).map(randomLast);
+    let blueFire = initArray(rows * cols).map(randomLast);
+    const reds = createArray(256, () => []);
+    const blues = createArray(256, () => []);
+
+    return function animate() {
+        if (getState("animating")) {
+            window.requestAnimationFrame(animate);
+        }
+        // Calculate the next frame
+        redFire = redFire
+            .map(mutate)
+            .map(randomLast)
+            .map(everyOddLast);
+
+        blueFire = blueFire
+            .map(mutate)
+            .map(randomLast)
+            .map(everyEvenLast)
+
+        const pixelator = drawPixel(g, getState("scale"));
+        for (let i = 0; i < redFire.length; i += 1) {
+            setStyle(g, makeRGB(redFire[i] * 255, 0, blueFire[i] * 255));
+            pixelator(fromIndex(i))
+        }
     }
 }
 
