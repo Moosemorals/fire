@@ -1,19 +1,3 @@
-const ranges = {
-    ff: [0, 1, 0.01],
-    sat: [0, 100, 1],
-    lum: [0, 100, 1]
-}
-
-const state = {
-    animating: false,
-    scale: 4,
-    ff: 0.25,
-    sat: 100,
-    lum: 100
-};
-
-const animators = {}
-
 /** Get a value from an object without thowing a NPE
  * prop:: (Object, String) -> a
  * 
@@ -30,6 +14,26 @@ const prop = (obj, key) => obj !== undefined && key in obj ? obj[key] : undefine
  */
 const getState = key => prop(state, key);
 
+const ranges = {
+    ff: [0, 1, 0.01],
+    sat: [0, 100, 1],
+    lum: [0, 100, 1]
+}
+
+const state = {
+    animating: false,
+    scale: 10,
+    ff: 0.25,
+    sat: 100,
+    lum: 100
+};
+
+const fireFactor = 9 + getState("ff");
+const rows = 60;
+const cols = 30;
+
+
+const animators = {}
 /** Set a state value
  * 
  * setState:: (String, a) -> undefined
@@ -52,11 +56,6 @@ const start = () => {
  * 
  */
 const stop = () => setState("animating", false);
-
-const fireFactor = 9 + getState("ff");
-const rows = Math.floor(400 / getState("scale"));
-const cols = Math.floor(400 / getState("scale"));
-
 /** Convert something 'array like' to an actual array
  * 
  * toArray:: ArrayLike a -> [a]
@@ -282,7 +281,7 @@ const buildRadioControl = (name, props) => appendChildren(
 )
 
 const buildRadioGroup = (name, onclick, props) => appendChildren(
-    ...props.map(v => 
+    ...props.map(v =>
         onClick(buildRadioControl(name, v), onclick)
     )
 );
@@ -293,15 +292,20 @@ const getChecked = name => $("input[name='" + name + "']").filter(x => prop(x, '
  * buildDisplay:: () -> Element
  * 
  */
-const buildDisplay = () => appendChildren($("#fire")[0], 
+const buildDisplay = () => appendChildren($("#fire")[0],
     buildRadioGroup("which", start, [{
-        label: "One color",
-        value: 'oneColor',
-        checked: true
-    }, {
-        label: "Two colors",
-        value: 'twoColor'
-    }]),
+            label: "Hex",
+            value: "hex",
+            checked: true
+        },
+        {
+            label: "One color",
+            value: 'oneColor'
+        }, {
+            label: "Two colors",
+            value: 'twoColor'
+        }
+    ]),
     buildButton("start", "Start", start),
     buildButton("stop", "Stop", stop)
 )
@@ -391,6 +395,7 @@ const filterLine = (row, index) => fromIndex(index).y === row;
  * @return {Boolean} - true if the index is in the last row, false otherwise
  */
 const filterLast = index => filterLine(rows - 1, index);
+const notLast = index => !filterLast(index);
 
 /** If the value given isn't in the last row, calcualte the average value of its neighbourghs
  * 
@@ -451,6 +456,9 @@ const fixedLast = (x, index) => setLast(() => 1, x, index);
 const everyOddLast = (x, index) => setLast(() => index % 16 > 8 ? x : 0, x, index);
 const everyEvenLast = (x, index) => setLast(() => index % 16 < 8 ? x : 0, x, index);
 
+const middleChunk = (x, index) => setLast(() =>
+ (fromIndex(index).x > cols / 4) && (fromIndex(index).x < (3 * cols / 4)) 
+ ? x : 0,x, index);
 
 /** Creates a new array of length x, filled with zeros
  * 
@@ -524,6 +532,37 @@ const mergeColors = (r, b) => (_, index) => makeRGB(r[index], b[index], 0);
  */
 const drawPixel = (g, scale) => p => drawRect(g, p.x * scale, p.y * scale, scale, scale);
 
+
+const drawHex = (g, scale) => {
+    const factor = Math.PI / 3;
+    const w = 3 * scale;
+    const h = Math.sqrt(3) * scale; 
+
+    const offX = w;
+    const offY = h / 2;    
+
+    return p => {
+        g.beginPath();
+        for (let i = 0; i < 6; i += 1) {
+            let x1 = (p.x * offX) + scale * Math.cos(factor * i)
+            let y1 = (p.y * offY) + scale * Math.sin(factor * i)
+
+            if (p.y % 2 === 0) {
+                x1 += w/2;
+            }
+
+            if (i === 0) {
+                g.moveTo(x1, y1)
+            } else {
+                g.lineTo(x1, y1)
+            }
+        }
+        g.closePath();
+        g.fill();
+    }
+}
+
+
 /** Draws the fire on the canvas
  *
  * drawFire:: (Canvas, Number) -> (Object, Number) -> ()
@@ -534,6 +573,40 @@ const drawFire = (g, scale, maker) => (p, index) => {
     if (index > 0 && p.length > 0) {
         setStyle(g, maker(index / 255));
         p.forEach(drawPixel(g, scale));
+    }
+}
+
+const hexFire = (g, scale, maker) => (p, index) => {
+    if (p.length > 0) {
+        setStyle(g, maker(index / 255));
+     //   g.beginPath();
+        p.forEach(drawHex(g, scale))
+    //    g.fill();
+    }
+}
+
+animators['hex'] = () => {
+    const g = getContext();
+    let fire = initArray(rows * cols).map(randomLast);
+    const reds = createArray(256, () => []);
+
+    return function animate() {
+        if (getState("animating")) {
+            window.requestAnimationFrame(animate);
+        }
+
+        // Calculate the next frame
+        fire = fire
+            .map(mutate)
+            .map(randomLast)
+            .map(middleChunk);
+
+        // Calcuate which pixels are which color
+        reds.forEach(x => x.length = 0);
+        fire.map(makeReds(reds))
+
+        // Color the pixles back in again
+        reds.forEach(hexFire(g, getState("scale"), makeRed))
     }
 }
 
@@ -589,8 +662,8 @@ animators['twoColor'] = () => {
             .map(everyEvenLast)
 
         const pixelator = drawPixel(g, getState("scale"));
-        for (let i = 0; i < redFire.length; i += 1) {
-            setStyle(g, makeRGB(redFire[i] * 255, 0, blueFire[i] * 255));
+        for (let i = 0; i < redFire.length - cols; i += 1) {
+            setStyle(g, makeRGB(redFire[i] * 255, blueFire[i] * 255, 0));
             pixelator(fromIndex(i))
         }
     }
